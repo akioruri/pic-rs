@@ -1,0 +1,7 @@
+default_backend = "github"
+
+[backends.github]
+token = "xxx"
+repo = "xxx/picture-bed"
+branch = "main"
+path = "images/"
