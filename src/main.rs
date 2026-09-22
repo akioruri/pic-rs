@@ -30,7 +30,13 @@ fn main() {
         exit(1);
     });
 
-    let uploader = GitHubUploader::new(backend);
+    let uploader = match GitHubUploader::new(&config.default_backend, backend) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            exit(1);
+        }
+    };
 
     let mut urls = Vec::new();
     for file in &args.files {

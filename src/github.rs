@@ -12,30 +12,42 @@ pub struct GitHubUploader {
 }
 
 impl GitHubUploader {
-    pub fn new(cfg: &toml::Table) -> Self {
-        Self {
-            token: cfg
-                .get("token")
-                .and_then(|v| v.as_str())
-                .unwrap()
-                .to_string(),
-            repo: cfg
-                .get("repo")
-                .and_then(|v| v.as_str())
-                .unwrap()
-                .to_string(),
-            branch: cfg
-                .get("branch")
-                .and_then(|v| v.as_str())
-                .unwrap_or("main")
-                .to_string(),
-            path: cfg
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            client: Client::new(),
+    pub fn new(
+        backend_name: &str,
+        cfg: &toml::Table,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        fn get<'a>(
+            backend_name: &str,
+            cfg: &'a toml::Table,
+            key: &str,
+            default: Option<&'static str>,
+        ) -> Result<&'a str, Box<dyn std::error::Error>> {
+            match cfg.get(key) {
+                None => default.ok_or_else(|| {
+                    format!("后端 `{}` 缺少必需的 `{}` 字段", backend_name, key).into()
+                }),
+                Some(v) => v.as_str().ok_or_else(|| {
+                    format!(
+                        "后端 `{}` 的 `{}` 字段类型错误: 应为字符串",
+                        backend_name, key
+                    )
+                    .into()
+                }),
+            }
         }
+
+        let token = get(backend_name, cfg, "token", None)?.to_string();
+        let repo = get(backend_name, cfg, "repo", None)?.to_string();
+        let branch = get(backend_name, cfg, "branch", Some("main"))?.to_string();
+        let path = get(backend_name, cfg, "path", Some(""))?.to_string();
+
+        Ok(Self {
+            token,
+            repo,
+            branch,
+            path,
+            client: Client::new(),
+        })
     }
 
     fn api_url(&self, file_name: &str) -> String {
