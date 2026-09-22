@@ -1,7 +1,7 @@
 use crate::backend::{config_get_str, Backend, UploadResult};
 use aws_credential_types::Credentials;
 use aws_sigv4::http_request::{
-    sign, PayloadChecksumKind, SignableBody, SignableRequest, SigningSettings,
+    sign, PayloadChecksumKind, PercentEncodingMode, SignableBody, SignableRequest, SigningSettings,
     UriPathNormalizationMode,
 };
 use aws_sigv4::sign::v4;
@@ -39,10 +39,17 @@ impl Backend for S3Uploader {
             .unwrap_or(file_path);
         let extension = path.extension().and_then(|n| n.to_str()).unwrap_or("");
 
+        // file_stem 可能含空格/中文等非 URI 合法字符,需 percent-encode
         let key = if extension.is_empty() {
-            format!("{}{}-{}", self.path, file_stem, content_hash)
+            format!("{}{}-{}", self.path, encode_uri_path(file_stem), content_hash)
         } else {
-            format!("{}{}-{}.{}", self.path, file_stem, content_hash, extension)
+            format!(
+                "{}{}-{}.{}",
+                self.path,
+                encode_uri_path(file_stem),
+                content_hash,
+                encode_uri_path(extension)
+            )
         };
 
         let (url, host) = self.build_put_url(&key)?;
@@ -62,6 +69,7 @@ impl Backend for S3Uploader {
         let mut settings = SigningSettings::default();
         settings.payload_checksum_kind = PayloadChecksumKind::XAmzSha256;
         settings.uri_path_normalization_mode = UriPathNormalizationMode::Disabled;
+        settings.percent_encoding_mode = PercentEncodingMode::Single;
 
         let params = v4::SigningParams::builder()
             .identity(&identity)
@@ -185,4 +193,19 @@ impl S3Uploader {
             Some(&self.endpoint_url)
         }
     }
+}
+
+/// RFC 3986 unreserved 字符以外的字节都 percent-encode。
+/// 用于 file_stem / extension 这类可能含空格、中文等任意字符的字段。
+fn encode_uri_path(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
 }
