@@ -13,3 +13,6 @@ hex = "0.4"
 base64 = "0.22"
 dirs = "5"
 serde_json = "1"
+aws-sigv4 = { version = "1", features = ["sign-http"] }
+aws-credential-types = "1"
+http = "1"

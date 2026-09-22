@@ -1,190 +1,120 @@
 # pic-rs
 
-<!-- badges -->
 [![Release](https://img.shields.io/github/v/release/akioruri/pic-rs)](https://github.com/akioruri/pic-rs/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> A blazing-fast, minimal GitHub image hosting upload tool written in Rust.
+> A blazing-fast, minimal image hosting upload tool written in Rust.
 
-Designed for seamless Typora integration and CLI workflows. Upload images to GitHub with a single command.
-
----
+Upload images to GitHub, S3, or any S3-compatible storage with a single command. Designed for Typora and CLI workflows.
 
 ## Highlights
 
-- **Fast** — Rust-powered, single binary with zero runtime dependencies
+- **Multi-backend** — GitHub, AWS S3, RustFS, MinIO, R2, B2
+- **Fast** — Single Rust binary with zero runtime dependencies
 - **Deduplicated** — Content-hash based: same file won't be uploaded twice
-- **Typora-native** — Works with Typora's picgo-core custom command protocol
-- **TOML config** — Clean, human-readable configuration
-
----
+- **Typora-native** — Works with the custom command protocol
 
 ## Install
-
-### Binary (macOS / Linux)
-
-Download the latest release from [GitHub Releases](https://github.com/your-username/pic-rs/releases) and add it to your `PATH`.
-
-### Homebrew
-
-```bash
-brew install your-username/tap/pic-rs
-```
-
-### From source
 
 ```bash
 cargo install --path .
 ```
 
----
+Or grab a binary from [GitHub Releases](https://github.com/akioruri/pic-rs/releases).
 
-## Prerequisites
+## Usage
 
-### 1. Create a GitHub repository
+```bash
+pic-rs screenshot.png
+pic-rs img1.png img2.jpg img3.gif
+```
 
-Create a **new public repository** on GitHub — this will serve as your image host. Name it anything (e.g. `picbed`).
+URLs are printed to stdout, one per line.
 
-### 2. Generate a Personal Access Token
+## Typora
 
-| Step | Action |
-|------|--------|
-| 1 | Go to **GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)** |
-| 2 | Click **Generate new token** |
-| 3 | Grant **`repo`** permission (full repository access) |
-| 4 | Copy and save the token securely |
+1. **Preferences → Image → Upload Services → Custom Command**
+2. Command: `/full/path/to/pic-rs "$filename"`
+3. Click **Test Uploader**
 
-> **Note:** For public repositories, a `public_repo` scoped token is sufficient. Private repositories require the full `repo` scope.
+## Configuration
 
-### 3. Configure
-
-Create a `.pic-rs.toml` file in one of these locations (checked in order):
-
-| Priority | Path |
-|----------|------|
-| 1 | `~/.pic-rs.toml` (home directory) |
-| 2 | `./.pic-rs.toml` (project root) |
-| 3 | `./pic-rs.toml` (working directory) |
-
-**Example:**
+Create `~/.config/pic-rs/config.toml`:
 
 ```toml
 default_backend = "github"
 
 [backends.github]
-token = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-repo = "your-username/picbed"
-branch = "main"
+token = "ghp_xxx"
+repo = "your-name/picbed"
+```
+
+Search order:
+1. `~/.config/pic-rs/config.toml`
+2. `./.pic-rs.toml`
+3. `./pic-rs.toml`
+
+### Backends
+
+#### GitHub
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `token` | yes | — | Personal Access Token with `repo` scope |
+| `repo` | yes | — | `owner/name` |
+| `branch` | no | `main` | |
+| `path` | no | `""` | Directory prefix in the repo |
+
+Uses the [Contents API](https://docs.github.com/rest/repos/contents#create-or-update-file-contents). Existing file SHA is fetched before update.
+
+#### S3 (AWS S3 / RustFS / MinIO / R2 / B2)
+
+```toml
+[backends.s3]
+bucket = "picbed"
+region = "us-east-1"
+access_key_id = "xxx"
+secret_access_key = "xxx"
+endpoint_url = "http://localhost:9000"
 path = "images/"
+public_url_base = "https://cdn.example.com"
 ```
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `default_backend` | Yes | — | Backend name (currently only `github`) |
-| `token` | Yes | — | GitHub Personal Access Token |
-| `repo` | Yes | — | Target repository in `owner/name` format |
-| `branch` | No | `main` | Branch to upload to |
-| `path` | No | `/` | Directory path inside the repository |
+| `bucket` | yes | — | Bucket name |
+| `region` | yes | — | Required for AWS; ignored by self-hosted |
+| `access_key_id` | yes | — | |
+| `secret_access_key` | yes | — | |
+| `endpoint_url` | no | `""` | Empty = AWS standard; set for self-hosted (path-style) |
+| `path` | no | `""` | Key prefix in the bucket |
+| `public_url_base` | no | `""` | Override returned URL (e.g. CDN) |
 
----
-
-## Usage
-
-### Single file
-
-```bash
-pic-rs screenshot.png
-```
-
-### Multiple files
-
-```bash
-pic-rs img1.png img2.jpg img3.gif
-```
-
-### Output
-
-URLs are printed to stdout, one per line:
-
-```
-https://raw.githubusercontent.com/your-username/picbed/main/images/screenshot-a1b2c3d4.png
-https://raw.githubusercontent.com/your-username/picbed/main/images/img2-b2c3d4e5.jpg
-```
-
----
-
-## Typora Integration
-
-1. Open **Typora → Preferences → Image**
-2. Scroll to **Upload Services**
-3. Select **Custom Command**
-4. Enter:
-
-```
-/full/path/to/pic-rs "$filename"
-```
-
-5. Click **Test Uploader** to verify the setup
-
----
+Uses AWS Signature V4.
 
 ## How It Works
 
 ### Deduplication
 
-pic-rs generates a SHA-256 hash of the file content and appends the first 8 characters to the filename:
+Each upload generates a SHA-256 hash of the file content. The first 8 hex characters are appended to the filename:
 
 ```
-original file  →  original-a1b2c3d4.png
+screenshot.png  →  screenshot-a1b2c3d4.png
 ```
 
-If the file content hasn't changed, the same name is reused — no duplicate uploads.
-
-### GitHub API
-
-Uses the [GitHub Contents API](https://docs.github.com/rest/repos/contents#create-or-update-file-contents) with:
-- `PUT /repos/{owner}/{repo}/contents/{path}` for uploads
-- `GET` first to retrieve existing file SHA (required for updates)
-
----
-
-## Roadmap
-
-| Feature | Status |
-|---------|--------|
-| GitHub backend | ✅ Done |
-| Tencent COS backend | 🔜 Planned |
-| SM.MS backend | 🔜 Planned |
-| Imgur backend | 🔜 Planned |
-| Upload history | 🔜 Planned |
-| Homebrew tap | 🔜 Planned |
-| Shell completions | 🔜 Planned |
-
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'add: some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
+Same content → same name → no duplicate uploads.
 
 ## Security
 
-If you discover a security vulnerability, please do **not** open a public issue. Instead, send an email or private message directly.
+- Never commit `~/.config/pic-rs/config.toml` to version control
+- Use environment variables for credentials in CI/CD contexts
 
-**Tips to keep your token safe:**
-- Never commit `.pic-rs.toml` to version control
-- Add `.pic-rs.toml` to `.gitignore`
-- Use environment variables for token in CI/CD contexts
+## Roadmap
 
----
+- [x] GitHub backend
+- [x] S3 backend
+- [ ] Upload history
 
 ## License
 
-Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information.
+MIT — see [`LICENSE`](LICENSE).

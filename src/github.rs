@@ -1,3 +1,4 @@
+use crate::backend::{config_get_str, Backend, UploadResult};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
@@ -11,63 +12,8 @@ pub struct GitHubUploader {
     client: Client,
 }
 
-impl GitHubUploader {
-    pub fn new(
-        backend_name: &str,
-        cfg: &toml::Table,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        fn get<'a>(
-            backend_name: &str,
-            cfg: &'a toml::Table,
-            key: &str,
-            default: Option<&'static str>,
-        ) -> Result<&'a str, Box<dyn std::error::Error>> {
-            match cfg.get(key) {
-                None => default.ok_or_else(|| {
-                    format!("后端 `{}` 缺少必需的 `{}` 字段", backend_name, key).into()
-                }),
-                Some(v) => v.as_str().ok_or_else(|| {
-                    format!(
-                        "后端 `{}` 的 `{}` 字段类型错误: 应为字符串",
-                        backend_name, key
-                    )
-                    .into()
-                }),
-            }
-        }
-
-        let token = get(backend_name, cfg, "token", None)?.to_string();
-        let repo = get(backend_name, cfg, "repo", None)?.to_string();
-        let branch = get(backend_name, cfg, "branch", Some("main"))?.to_string();
-        let path = get(backend_name, cfg, "path", Some(""))?.to_string();
-
-        Ok(Self {
-            token,
-            repo,
-            branch,
-            path,
-            client: Client::new(),
-        })
-    }
-
-    fn api_url(&self, file_name: &str) -> String {
-        format!(
-            "https://api.github.com/repos/{}/contents/{}{}",
-            self.repo, self.path, file_name
-        )
-    }
-
-    fn raw_url(&self, file_name: &str) -> String {
-        format!(
-            "https://raw.githubusercontent.com/{}/{}/{}{}",
-            self.repo, self.branch, self.path, file_name
-        )
-    }
-
-    pub fn upload(
-        &self,
-        file_path: &str,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+impl Backend for GitHubUploader {
+    fn upload(&self, file_path: &str) -> UploadResult<String> {
         let path = std::path::Path::new(file_path);
         let file_stem = path
             .file_stem()
@@ -78,7 +24,7 @@ impl GitHubUploader {
         let content = fs::read(file_path)?;
         let content_base64 = BASE64.encode(&content);
 
-        // 生成内容哈希，取前8位
+        // 生成内容哈希,取前8位
         let content_hash = {
             let mut hasher = Sha256::new();
             hasher.update(&content);
@@ -141,5 +87,39 @@ impl GitHubUploader {
         }
 
         Ok(self.raw_url(&new_file_name))
+    }
+}
+
+impl GitHubUploader {
+    pub fn new(
+        backend_name: &str,
+        cfg: &toml::Table,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let token = config_get_str(backend_name, cfg, "token", None)?.to_string();
+        let repo = config_get_str(backend_name, cfg, "repo", None)?.to_string();
+        let branch = config_get_str(backend_name, cfg, "branch", Some("main"))?.to_string();
+        let path = config_get_str(backend_name, cfg, "path", Some(""))?.to_string();
+
+        Ok(Self {
+            token,
+            repo,
+            branch,
+            path,
+            client: Client::new(),
+        })
+    }
+
+    fn api_url(&self, file_name: &str) -> String {
+        format!(
+            "https://api.github.com/repos/{}/contents/{}{}",
+            self.repo, self.path, file_name
+        )
+    }
+
+    fn raw_url(&self, file_name: &str) -> String {
+        format!(
+            "https://raw.githubusercontent.com/{}/{}/{}{}",
+            self.repo, self.branch, self.path, file_name
+        )
     }
 }

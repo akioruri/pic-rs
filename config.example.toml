@@ -1,7 +1,18 @@
 default_backend = "github"
 
+# GitHub backend
 [backends.github]
 token = "xxx"
 repo = "xxx/picture-bed"
 branch = "main"
 path = "images/"
+
+# S3 backend
+# [backends.s3]
+# bucket = "picbed"
+# region = "us-east-1"
+# access_key_id = "xxx"
+# secret_access_key = "xxx"
+# endpoint_url = "http://localhost:9000"
+# path = "images/"
+# public_url_base = "https://cdn.example.com"
